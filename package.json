@@ -1,0 +1,45 @@
+{
+  "name": "node_hash_comparison",
+  "version": "1.0.0",
+  "description": "Hash algorithm performance comparison for Node.js",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "create-testfile": "node create-testfile.js",
+    "create-testfile:sparse": "node create-testfile.js sparse",
+    "create-testfile:real": "node create-testfile.js real",
+    "create-testfile:random": "node create-testfile.js random",
+    "create-testfile:system": "node create-testfile.js system",
+    "clean": "node clean.js",
+    "info": "node info.js",
+    "quick-test": "node quick-test.js",
+    "test-performance": "node index.js temp_10GB_file",
+    "test-io": "node pure-io-test.js temp_10GB_file",
+    "test-streaming": "node streaming-hash.js temp_10GB_file",
+    "benchmark": "node benchmark.js basic",
+    "benchmark:full": "node benchmark.js full",
+    "benchmark:keep-file": "node benchmark.js basic --keep-file",
+    "benchmark:full-keep": "node benchmark.js full --keep-file"
+  },
+  "keywords": [
+    "hash",
+    "performance",
+    "crypto",
+    "benchmark",
+    "xxhash",
+    "crc32",
+    "sha256"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.11.0",
+  "dependencies": {
+    "@node-rs/crc32": "^1.10.6",
+    "@node-rs/xxhash": "^1.7.6",
+    "boxen": "^5.1.2",
+    "chalk": "^4.1.2",
+    "cli-progress": "^3.12.0",
+    "cli-table3": "^0.6.3",
+    "ora": "^5.4.1"
+  }
+}
