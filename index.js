@@ -998,15 +998,15 @@ async function main() {
       { padding: 1, margin: 1, borderStyle: 'double', borderColor: 'white', title: 'Test Configuration' }
     ));
     
-    // await testAllHashAlgorithms();
-    // const streamingResults = await testStreamingPerformance(filename);
-    // const ioResults = await testPureIOPerformance(filename);
+    await testAllHashAlgorithms();
+    const streamingResults = await testStreamingPerformance(filename);
+    const ioResults = await testPureIOPerformance(filename);
     await testWorkerSharedHashPerformance(filename);
     
-    // // Show efficiency comparison if we have both results
-    // if (streamingResults && streamingResults.length > 0 && ioResults && ioResults.length > 0) {
-    //   showEfficiencyComparison(streamingResults, ioResults);
-    // }
+    // Show efficiency comparison if we have both results
+    if (streamingResults && streamingResults.length > 0 && ioResults && ioResults.length > 0) {
+      showEfficiencyComparison(streamingResults, ioResults);
+    }
     
     console.log(boxen(
       chalk.bold.green('🎯 COMPREHENSIVE PERFORMANCE ANALYSIS\n\n') +
