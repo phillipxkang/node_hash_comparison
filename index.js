@@ -326,10 +326,74 @@ async function testStreamingPerformance(filename) {
       }
     },
     {
+      name: 'xxh3-64: 32MB highwatermark',
+      test: async () => {
+        const { xxh3 } = require('@node-rs/xxhash');
+        const xxhash = xxh3.Xxh3.withSeed();
+        const stream = fs.createReadStream(filename, { highWaterMark: 32 * 1024 * 1024 });
+        
+        await new Promise((resolve, reject) => {
+          stream.on('data', chunk => xxhash.update(chunk));
+          stream.on('end', resolve);
+          stream.on('error', reject);
+        });
+        
+        xxhash.digest();
+      }
+    },
+    {
+      name: 'xxh64',
+      test: async () => {
+        const { Xxh64 } = require('@node-rs/xxhash');
+        const xxhash = new Xxh64();
+        const stream = fs.createReadStream(filename, { highWaterMark: 4 * 1024 * 1024 });
+        
+        await new Promise((resolve, reject) => {
+          stream.on('data', chunk => xxhash.update(chunk));
+          stream.on('end', resolve);
+          stream.on('error', reject);
+        });
+        
+        xxhash.digest();
+      }
+    },
+    {
+      name: 'xxh64: 32MB highwatermark',
+      test: async () => {
+        const { Xxh64 } = require('@node-rs/xxhash');
+        const xxhash = new Xxh64();
+        const stream = fs.createReadStream(filename, { highWaterMark: 32 * 1024 * 1024 });
+        
+        await new Promise((resolve, reject) => {
+          stream.on('data', chunk => xxhash.update(chunk));
+          stream.on('end', resolve);
+          stream.on('error', reject);
+        });
+        
+        xxhash.digest();
+      }
+    },
+    {
       name: 'crc32c',
       test: async () => {
         const { crc32c } = require('@node-rs/crc32');
         const stream = fs.createReadStream(filename, { highWaterMark: 4 * 1024 * 1024 });
+        let crcResult = 0;
+        
+        await new Promise((resolve, reject) => {
+          stream.on('data', chunk => {
+            crcResult = crc32c(chunk, crcResult);
+          });
+          stream.on('end', resolve);
+          stream.on('error', reject);
+        });
+      }
+    },
+    {
+      name: 'crc32c: 32MB highwatermark',
+      test: async () => {
+        const { crc32c } = require('@node-rs/crc32');
+        const stream = fs.createReadStream(filename, { highWaterMark: 32 * 1024 * 1024 });
         let crcResult = 0;
         
         await new Promise((resolve, reject) => {
@@ -433,7 +497,9 @@ async function testPureIOPerformance(filename) {
     { size: 256 * 1024, name: '256KB' },
     { size: 1024 * 1024, name: '1MB' },
     { size: 4 * 1024 * 1024, name: '4MB' },
-    { size: 16 * 1024 * 1024, name: '16MB' }
+    { size: 16 * 1024 * 1024, name: '16MB' },
+    { size: 32 * 1024 * 1024, name: '32MB' },
+    { size: 64 * 1024 * 1024, name: '64MB' }
   ];
   
   for (const { size, name } of bufferSizes) {
