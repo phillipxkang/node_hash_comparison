@@ -7,6 +7,168 @@ const Table = require('cli-table3');
 const ora = require('ora');
 const boxen = require('boxen');
 const cliProgress = require('cli-progress');
+const { Worker } = require('worker_threads');
+const path = require('path');
+
+async function testWorkerSharedHashPerformance(filename) {
+  const fileSizeGB = fs.statSync(filename).size / (1024 * 1024 * 1024);
+
+  const algorithms = [
+    { name: 'sha256', type: 'native' },
+    { name: 'xxh64', type: 'external', module: '@node-rs/xxhash' },
+    { name: 'xxh3-64', type: 'external', module: '@node-rs/xxhash' },
+    { name: 'crc32c', type: 'external', module: '@node-rs/crc32' }
+  ];
+
+  console.log(boxen(
+    chalk.bold.magenta('🧵 SHAREDARRAYBUFFER HASH TEST'),
+    { padding: 1, margin: 1, borderStyle: 'round', borderColor: 'magenta' }
+  ));
+
+  const table = new Table({
+    head: [
+      chalk.bold.white('Hash Algorithm'),
+      chalk.bold.cyan(`Performance (${fileSizeGB.toFixed(1)}GB)`),
+      chalk.bold.green('Status')
+    ],
+    colWidths: [20, 25, 12],
+    style: {
+      head: [],
+      border: ['magenta']
+    }
+  });
+
+  for (const algo of algorithms) {
+    const spinner = ora(`Worker SharedBuffer: ${algo.name}`).start();
+
+    // Skip if module missing
+    if (algo.module) {
+      try {
+        require.resolve(algo.module);
+      } catch (err) {
+        spinner.warn(`${algo.name} skipped (missing ${algo.module})`);
+        table.push([
+          chalk.magenta(algo.name),
+          chalk.gray('N/A'),
+          chalk.yellow('✗')
+        ]);
+        continue;
+      }
+    }
+
+    const CHUNK_SIZE = 4 * 1024 * 1024;
+    const sharedBuffer = new SharedArrayBuffer(CHUNK_SIZE);
+    const sharedFlag = new SharedArrayBuffer(8); // status + length
+    
+    // Initialize shared flags
+    const flagView = new Int32Array(sharedFlag);
+    Atomics.store(flagView, 0, 0); // status = ready for data
+    Atomics.store(flagView, 1, 0); // length = 0
+
+    try {
+      const duration = await measurePerformance(`Worker-${algo.name}`, async () => {
+        let hasher, reader;
+        let hasherExitPromise, readerExitPromise;
+        let timeoutId;
+        
+        try {
+          hasher = new Worker(path.join(__dirname, 'worker-hasher.js'), {
+            workerData: { buffer: sharedBuffer, flags: sharedFlag, algo: algo.name }
+          });
+
+          reader = new Worker(path.join(__dirname, 'worker-reader.js'), {
+            workerData: {
+              file: filename,
+              buffer: sharedBuffer,
+              flags: sharedFlag,
+              chunkSize: CHUNK_SIZE
+            }
+          });
+
+          // Create exit promises before setting up error handlers
+          hasherExitPromise = new Promise((resolve, reject) => {
+            hasher.on('exit', (code) => {
+              if (code === 0) resolve();
+              else reject(new Error(`Hasher exited with code ${code}`));
+            });
+          });
+          
+          readerExitPromise = new Promise((resolve, reject) => {
+            reader.on('exit', (code) => {
+              if (code === 0) resolve();
+              else reject(new Error(`Reader exited with code ${code}`));
+            });
+          });
+
+          // Handle worker errors with proper cleanup
+          hasher.on('error', (err) => {
+            console.error('Hasher worker error:', err);
+            if (reader) reader.terminate();
+          });
+          
+          reader.on('error', (err) => {
+            console.error('Reader worker error:', err);
+            if (hasher) hasher.terminate();
+          });
+
+          // Set up timeout to prevent hanging (30 seconds for large files)
+          const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => {
+              reject(new Error('Worker timeout - test took too long'));
+            }, 30000);
+          });
+
+          // Wait for both workers to complete or timeout
+          await Promise.race([
+            Promise.all([hasherExitPromise, readerExitPromise]),
+            timeoutPromise
+          ]);
+          
+          // Clear timeout if we completed successfully
+          if (timeoutId) clearTimeout(timeoutId);
+          
+        } finally {
+          // Clear timeout
+          if (timeoutId) clearTimeout(timeoutId);
+          
+          // Force cleanup - terminate any remaining workers
+          if (hasher && !hasher.killed) {
+            await hasher.terminate();
+          }
+          if (reader && !reader.killed) {
+            await reader.terminate();
+          }
+          
+          // Small delay to ensure complete cleanup
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }, spinner);
+
+      const gbps = fileSizeGB / duration;
+      const coloredResult = gbps > 3 ? chalk.green(`${gbps.toFixed(2)} GB/s`) :
+                           gbps > 1.5 ? chalk.yellow(`${gbps.toFixed(2)} GB/s`) :
+                           chalk.red(`${gbps.toFixed(2)} GB/s`);
+
+      table.push([
+        chalk.magenta(algo.name),
+        coloredResult,
+        chalk.green('✓')
+      ]);
+    } catch (err) {
+      spinner.fail(err.message);
+      table.push([
+        chalk.magenta(algo.name),
+        chalk.gray('err'),
+        chalk.red('✗')
+      ]);
+    }
+  }
+
+  console.log(table.toString());
+  console.log();
+}
+
+
 
 // Helper to measure performance and return duration in seconds
 async function measurePerformance(name, testFunc, spinner = null) {
@@ -836,14 +998,15 @@ async function main() {
       { padding: 1, margin: 1, borderStyle: 'double', borderColor: 'white', title: 'Test Configuration' }
     ));
     
-    await testAllHashAlgorithms();
-    const streamingResults = await testStreamingPerformance(filename);
-    const ioResults = await testPureIOPerformance(filename);
+    // await testAllHashAlgorithms();
+    // const streamingResults = await testStreamingPerformance(filename);
+    // const ioResults = await testPureIOPerformance(filename);
+    await testWorkerSharedHashPerformance(filename);
     
-    // Show efficiency comparison if we have both results
-    if (streamingResults && streamingResults.length > 0 && ioResults && ioResults.length > 0) {
-      showEfficiencyComparison(streamingResults, ioResults);
-    }
+    // // Show efficiency comparison if we have both results
+    // if (streamingResults && streamingResults.length > 0 && ioResults && ioResults.length > 0) {
+    //   showEfficiencyComparison(streamingResults, ioResults);
+    // }
     
     console.log(boxen(
       chalk.bold.green('🎯 COMPREHENSIVE PERFORMANCE ANALYSIS\n\n') +
